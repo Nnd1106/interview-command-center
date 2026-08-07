@@ -97,6 +97,7 @@
     <div class="card" id="question-card">
       <div class="question-meta">
         <span class="question-type-badge" id="question-type-badge">—</span>
+        <span class="fallback-tag" id="fallback-tag" style="display:none;" title="Gemini was unavailable after two attempts, so this is a pre-written backup question, not a live AI one.">Offline backup</span>
         <span id="question-progress-label">Question 1 of 3</span>
       </div>
       <p class="question-text" id="question-text">Loading your first question…</p>
@@ -112,6 +113,7 @@
         <span class="loading-dot"></span><span id="loading-text">Thinking…</span>
       </div>
       <div class="error-banner" id="interview-error" style="display:none;"></div>
+      <div class="notice-banner" id="interview-notice" style="display:none;"></div>
     </div>
 
     <div class="card feedback-card" id="feedback-card" style="display:none;">
@@ -184,6 +186,7 @@
 
 <script src="assets/js/utils.js"></script>
 <script src="assets/js/aiClient.js"></script>
+<script src="assets/js/fallbackContent.js"></script>
 <script src="assets/js/interview.js"></script>
 <script src="assets/js/timer.js"></script>
 <script src="assets/js/main.js"></script>

@@ -96,31 +96,31 @@ const InterviewModule = (() => {
 
   const ROUND_LABEL = { technical1: 'Technical Round 1 (Foundations)', technical2: 'Technical Round 2 (Applied & Case)', hr: 'HR Round (Behavioral)' };
 
-  async function generateQuestion(role, roundId, subtype, alreadyAsked) {
+  async function generateQuestion(role, roundId, subtype, alreadyAsked, onRetry) {
     const builder = QUESTION_PROMPTS[subtype];
     const prompt = subtype === 'foundational' ? builder(role, alreadyAsked || []) : builder(role);
-    const result = await AiClientModule.generate({
+    const result = await AiClientModule.generateWithRetry({
       systemInstruction: SYSTEM_INSTRUCTION(role),
       prompt,
       schema: QUESTION_SCHEMA,
-    });
+    }, { onRetry });
     return result.question;
   }
 
-  async function generateFeedbackAndFollowUp(role, roundId, question, answer) {
+  async function generateFeedbackAndFollowUp(role, roundId, question, answer, onRetry) {
     const prompt = `Round: ${ROUND_LABEL[roundId]}\nQuestion asked: "${question}"\nCandidate's answer: "${answer}"\n\nDo two things:\n1. Give structured feedback on this specific answer: what they covered well (wellCovered — be genuine, don't invent praise if the answer was weak), what was missing, vague, or incorrect (missedOrWrong — if honestly nothing important is missing, say so briefly rather than inventing a flaw), and one specific, actionable way to improve (improvement).\n2. Write ONE genuine, sharp follow-up question that digs into something SPECIFIC they actually said in their answer above — probe a vague claim, push for a concrete example, question an assumption, or ask them to go one level deeper on a point they raised. It must clearly build on their actual answer, not be a generic next question a robot would ask regardless of what they said.`;
-    return AiClientModule.generate({ systemInstruction: SYSTEM_INSTRUCTION(role), prompt, schema: FEEDBACK_AND_FOLLOWUP_SCHEMA });
+    return AiClientModule.generateWithRetry({ systemInstruction: SYSTEM_INSTRUCTION(role), prompt, schema: FEEDBACK_AND_FOLLOWUP_SCHEMA }, { onRetry });
   }
 
-  async function generateFeedbackOnly(role, roundId, originalQuestion, followUpQuestion, answer) {
+  async function generateFeedbackOnly(role, roundId, originalQuestion, followUpQuestion, answer, onRetry) {
     const prompt = `Round: ${ROUND_LABEL[roundId]}\nThis is a follow-up question that was asked after the candidate's earlier answer to "${originalQuestion}".\nFollow-up question asked: "${followUpQuestion}"\nCandidate's answer to the follow-up: "${answer}"\n\nGive structured feedback on this specific answer: what they covered well (wellCovered — genuine, don't invent praise), what was missing, vague, or incorrect (missedOrWrong — say so honestly if nothing important is missing), and one specific actionable way to improve (improvement).`;
-    return AiClientModule.generate({ systemInstruction: SYSTEM_INSTRUCTION(role), prompt, schema: FEEDBACK_ONLY_SCHEMA });
+    return AiClientModule.generateWithRetry({ systemInstruction: SYSTEM_INSTRUCTION(role), prompt, schema: FEEDBACK_ONLY_SCHEMA }, { onRetry });
   }
 
-  async function generateFinalSummary(role, transcript) {
+  async function generateFinalSummary(role, transcript, onRetry) {
     const condensed = transcript.map((t, i) => `${i + 1}. [${ROUND_LABEL[t.roundId]}] Q: "${t.question}" — Candidate's gist: "${t.answer.slice(0, 200)}" — Feedback given: covered well: "${t.feedback.wellCovered}"; missed: "${t.feedback.missedOrWrong}"`).join('\n');
     const prompt = `You just finished conducting a full 3-round mock interview for a candidate targeting a "${role}" role. Here is a condensed record of the interview:\n${condensed}\n\nWrite a brief, honest overall performance summary (overallSummary, 3-5 sentences) the way a rigorous-but-encouraging interviewer would after a real interview debrief, plus 2-4 short topStrengths phrases and 2-4 short topAreasToImprove phrases — all grounded in what actually happened in the transcript above, not invented.`;
-    return AiClientModule.generate({ systemInstruction: SYSTEM_INSTRUCTION(role), prompt, schema: SUMMARY_SCHEMA });
+    return AiClientModule.generateWithRetry({ systemInstruction: SYSTEM_INSTRUCTION(role), prompt, schema: SUMMARY_SCHEMA }, { onRetry });
   }
 
   return { ROUNDS, ROUND_LABEL, generateQuestion, generateFeedbackAndFollowUp, generateFeedbackOnly, generateFinalSummary };

@@ -262,6 +262,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
 }
 .question-type-badge.followup { border-color: var(--accent-amber); color: var(--accent-amber); }
 
+.fallback-tag {
+  font-size: 10px; padding: 2px 8px; border-radius: 4px;
+  border: 1px dashed var(--text-muted); color: var(--text-muted);
+  text-transform: none; letter-spacing: 0.02em;
+}
+
 .question-text {
   font-size: 16.5px;
   line-height: 1.6;
@@ -287,6 +293,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
   border: 1px solid rgba(227, 73, 72, 0.4);
   background: rgba(227, 73, 72, 0.08);
   color: var(--down);
+  padding: 12px 14px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  margin-top: 12px;
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+
+.notice-banner {
+  border: 1px solid rgba(255, 176, 32, 0.4);
+  background: rgba(255, 176, 32, 0.08);
+  color: var(--accent-amber);
   padding: 12px 14px;
   border-radius: 6px;
   font-size: 12.5px;

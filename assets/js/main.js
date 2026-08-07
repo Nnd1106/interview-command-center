@@ -119,11 +119,31 @@
 
   // ---------- Loading / error UI ----------
 
+  let retryCountdownInterval = null;
+  function clearRetryCountdown() { if (retryCountdownInterval) { clearInterval(retryCountdownInterval); retryCountdownInterval = null; } }
+
   function setLoading(on, text) {
+    clearRetryCountdown();
     $('loading-row').style.display = on ? 'flex' : 'none';
     if (text) $('loading-text').textContent = text;
     $('submit-answer-btn').disabled = on;
     $('answer-input').disabled = on;
+  }
+
+  /** Shown while aiClient.generateWithRetry is backing off after a failed
+   * attempt — makes the automatic retry visible and countable rather than
+   * a silent multi-second stall the user has no read on. */
+  function showRetryProgress(waitMs, label) {
+    clearRetryCountdown();
+    let remaining = Math.ceil(waitMs / 1000);
+    const render = () => { $('loading-text').textContent = `${label} — retrying in ${remaining}s…`; };
+    $('loading-row').style.display = 'flex';
+    render();
+    retryCountdownInterval = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) { clearRetryCountdown(); $('loading-text').textContent = `${label} — retrying now…`; return; }
+      render();
+    }, 1000);
   }
 
   function showInterviewError(msg, retryFn) {
@@ -143,14 +163,35 @@
   }
   function hideInterviewError() { $('interview-error').style.display = 'none'; }
 
+  /** Non-blocking amber notice — used when a fallback (static question or
+   * degraded feedback) kicked in after Gemini failed twice in a row. The
+   * interview keeps going; this just discloses that it happened, honestly,
+   * rather than silently pretending the fallback content is live AI. */
+  function showInterviewNotice(msg) {
+    const el = $('interview-notice');
+    el.innerHTML = '';
+    const span = document.createElement('span');
+    span.textContent = msg;
+    el.appendChild(span);
+    const btn = document.createElement('button');
+    btn.className = 'btn small';
+    btn.textContent = 'Dismiss';
+    btn.addEventListener('click', () => { el.style.display = 'none'; });
+    el.appendChild(btn);
+    el.style.display = 'flex';
+  }
+  function hideInterviewNotice() { $('interview-notice').style.display = 'none'; }
+
   // ---------- Question flow ----------
 
   async function loadCoreQuestion() {
     hideInterviewError();
+    hideInterviewNotice();
     $('feedback-card').style.display = 'none';
     $('answer-input').value = '';
     $('answer-input').disabled = false;
     $('answer-hint').textContent = "Answer as you would in a real interview — specific, structured, and honest.";
+    $('fallback-tag').style.display = 'none';
     state.awaitingFollowUp = false;
     state.pendingFollowUp = null;
 
@@ -166,15 +207,29 @@
     $('question-text').textContent = 'Generating your question…';
 
     setLoading(true, 'Preparing your question…');
+    const onRetry = (attempt, waitMs) => showRetryProgress(waitMs, "Gemini's free-tier rate limit was hit");
     try {
-      const question = await InterviewModule.generateQuestion(state.role, round.id, spec.subtype, state.askedFoundational);
+      const question = await InterviewModule.generateQuestion(state.role, round.id, spec.subtype, state.askedFoundational, onRetry);
       $('question-text').textContent = question;
       if (spec.subtype === 'foundational') state.askedFoundational.push(question);
       state.currentQuestionText = question;
       startTimerForCurrentQuestion();
     } catch (err) {
-      $('question-text').textContent = 'Couldn\'t generate this question.';
-      showInterviewError(err.message || 'Something went wrong.', loadCoreQuestion);
+      if (err.kind === 'auth' || err.kind === 'no-key') {
+        $('question-text').textContent = 'Couldn\'t generate this question.';
+        showInterviewError(err.message || 'Something went wrong.', loadCoreQuestion);
+      } else {
+        // Two live attempts already failed (generateWithRetry's job) —
+        // rather than block here too, fall back to a static question so
+        // the interview keeps moving, and say so plainly.
+        const question = FallbackContentModule.getFallbackQuestion(state.role, spec.subtype, state.askedFoundational);
+        $('question-text').textContent = question;
+        if (spec.subtype === 'foundational') state.askedFoundational.push(question);
+        state.currentQuestionText = question;
+        $('fallback-tag').style.display = 'inline-block';
+        startTimerForCurrentQuestion();
+        showInterviewNotice(`Gemini was unavailable after two attempts (${err.message}) — using a backup question so you can keep going.`);
+      }
     } finally {
       setLoading(false);
     }
@@ -202,16 +257,18 @@
     if (!answer) { showInterviewError('Type an answer before submitting — even a partial attempt is fine.'); return; }
     stopTimer();
     hideInterviewError();
+    hideInterviewNotice();
     state.lastAnswerText = answer;
 
     setLoading(true, state.awaitingFollowUp ? 'Reviewing your follow-up answer…' : 'Reviewing your answer and preparing a follow-up…');
+    const onRetry = (attempt, waitMs) => showRetryProgress(waitMs, "Gemini's free-tier rate limit was hit");
     try {
       if (state.awaitingFollowUp) {
-        const result = await InterviewModule.generateFeedbackOnly(state.role, currentRound().id, state.originalQuestionText, state.currentQuestionText, answer);
+        const result = await InterviewModule.generateFeedbackOnly(state.role, currentRound().id, state.originalQuestionText, state.currentQuestionText, answer, onRetry);
         recordTranscript(state.currentQuestionText, answer, result, true);
         renderFeedback(result, false);
       } else {
-        const result = await InterviewModule.generateFeedbackAndFollowUp(state.role, currentRound().id, state.currentQuestionText, answer);
+        const result = await InterviewModule.generateFeedbackAndFollowUp(state.role, currentRound().id, state.currentQuestionText, answer, onRetry);
         recordTranscript(state.currentQuestionText, answer, result, false);
         state.pendingFollowUp = result.followUp;
         renderFeedback(result, true);
@@ -219,7 +276,19 @@
       setLoading(false);
     } catch (err) {
       setLoading(false);
-      showInterviewError(err.message || 'Something went wrong getting feedback.', () => submitAnswer());
+      if (err.kind === 'auth' || err.kind === 'no-key') {
+        showInterviewError(err.message || 'Something went wrong getting feedback.', () => submitAnswer());
+      } else {
+        // Two live attempts already failed. There's no honest way to fake
+        // feedback tied to their actual answer, so show a clearly-labeled
+        // placeholder and skip queuing a follow-up rather than inventing
+        // one that isn't really grounded in what they said.
+        const degraded = FallbackContentModule.getDegradedFeedback();
+        recordTranscript(state.currentQuestionText, answer, degraded, state.awaitingFollowUp);
+        state.pendingFollowUp = null;
+        renderFeedback(degraded, false);
+        showInterviewNotice(`Live AI feedback was unavailable after two attempts (${err.message}) — showing a placeholder so you can keep going.`);
+      }
     }
   }
 
@@ -273,13 +342,20 @@
     $('summary-improve').innerHTML = '';
     renderTranscript();
 
+    const onRetry = (attempt, waitMs) => { $('summary-overall').textContent = `Gemini's free-tier rate limit was hit — retrying automatically in ${Math.ceil(waitMs / 1000)}s…`; };
     try {
-      const summary = await InterviewModule.generateFinalSummary(state.role, state.transcript);
+      const summary = await InterviewModule.generateFinalSummary(state.role, state.transcript, onRetry);
       $('summary-overall').textContent = summary.overallSummary || '—';
       $('summary-strengths').innerHTML = (summary.topStrengths || []).map((s) => `<li>${escapeHtml(s)}</li>`).join('') || '<li>—</li>';
       $('summary-improve').innerHTML = (summary.topAreasToImprove || []).map((s) => `<li>${escapeHtml(s)}</li>`).join('') || '<li>—</li>';
     } catch (err) {
-      $('summary-overall').textContent = `Couldn't generate an overall summary (${err.message || 'error'}), but your full transcript and per-answer feedback below are complete.`;
+      // Two live attempts already failed — fall back to a summary computed
+      // locally from the transcript already sitting in memory, so the
+      // session still ends with something useful instead of an apology.
+      const fallback = FallbackContentModule.buildLocalSummary(state.role, state.transcript);
+      $('summary-overall').textContent = fallback.overallSummary;
+      $('summary-strengths').innerHTML = fallback.topStrengths.map((s) => `<li>${escapeHtml(s)}</li>`).join('');
+      $('summary-improve').innerHTML = fallback.topAreasToImprove.map((s) => `<li>${escapeHtml(s)}</li>`).join('');
     }
   }
 
@@ -315,14 +391,24 @@
       });
     });
 
+    // Disabled synchronously, before any `await`, so a fast double-click
+    // (or an eager double-tap) can't land a second click while the first
+    // is still in flight and fire two concurrent question-generation
+    // calls — that burst is exactly what was tripping Gemini's rate limit
+    // on the very first question.
     $('start-btn').addEventListener('click', async () => {
+      const btn = $('start-btn');
+      if (btn.disabled) return;
       const role = $('role-input').value.trim();
       if (!role) return;
+      btn.disabled = true;
       showSetupError('');
       state = freshState();
       state.role = role;
       showScreen('screen-interview');
       await loadCoreQuestion();
+      // Left disabled here on purpose: updateStartButton() re-enables it
+      // (or not) whenever the user returns to this screen via restart.
     });
 
     $('submit-answer-btn').addEventListener('click', submitAnswer);
@@ -330,7 +416,16 @@
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submitAnswer();
     });
 
-    $('next-btn').addEventListener('click', advanceAfterFeedback);
+    $('next-btn').addEventListener('click', async () => {
+      const btn = $('next-btn');
+      if (btn.disabled) return;
+      btn.disabled = true;
+      try {
+        await advanceAfterFeedback();
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     $('restart-btn').addEventListener('click', () => {
       state = null;
