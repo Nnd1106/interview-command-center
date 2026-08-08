@@ -1,22 +1,30 @@
 /* ---------------------------------------------------------------------
  * fallbackContent.js — a small, static, per-category question bank and
- * locally-computed feedback/summary so the interview can keep going
- * even when Gemini is unavailable (rate-limited, network hiccup, etc.)
- * after two consecutive failed attempts. Nothing here calls the network
- * or touches localStorage — it's pure, synchronous, offline content.
+ * locally-computed feedback/summary logic. Serves two purposes:
+ *
+ *  1. Quick Practice mode's entire content source — instant, offline,
+ *     no API key, by design (not a degraded state).
+ *  2. Adaptive AI mode's safety net — if Gemini fails twice in a row on
+ *     a call, the interview falls back to this same static content
+ *     rather than dead-ending, clearly labeled as a backup when it
+ *     happens (see main.js's fallback-tag / notice-banner handling).
+ *
+ * Nothing here ever calls the network or touches localStorage — it's
+ * pure, synchronous, offline content.
  *
  * The role the candidate typed is free text, not a fixed list, so this
  * matches it against a handful of broad finance-career categories by
  * keyword; anything that doesn't match falls back to a general-finance
- * question set. It's intentionally small — just enough that a rate
- * limit never fully breaks the mock interview, not a replacement for
- * genuinely tailored AI questions.
+ * question set. It's intentionally small — a genuinely useful practice
+ * set for Quick Practice, and just enough that a rate limit never fully
+ * breaks Adaptive AI mode, not a replacement for live tailored AI.
  * ------------------------------------------------------------------- */
 
 const FallbackContentModule = (() => {
   const CATEGORIES = [
     {
       id: 'equity-research',
+      label: 'Equity Research',
       match: /equity research|research analyst|buy-side|sell-side|investment research|portfolio manag/i,
       foundational: [
         'Walk me through how you would value a company using a discounted cash flow model.',
@@ -28,6 +36,7 @@ const FallbackContentModule = (() => {
     },
     {
       id: 'accounting-tax',
+      label: 'Accounting & Tax',
       match: /tax|accounting|audit|\bcpa\b|controller|bookkeep/i,
       foundational: [
         'Walk me through the three financial statements and how they connect to each other.',
@@ -39,6 +48,7 @@ const FallbackContentModule = (() => {
     },
     {
       id: 'actuarial-insurance',
+      label: 'Actuarial & Insurance',
       match: /actuar|insurance|underwrit|claims/i,
       foundational: [
         'Explain the difference between frequency and severity in claims analysis.',
@@ -50,6 +60,7 @@ const FallbackContentModule = (() => {
     },
     {
       id: 'investment-banking',
+      label: 'Investment Banking',
       match: /investment bank|\bm&a\b|mergers|capital markets|corporate finance|banking analyst/i,
       foundational: [
         'Walk me through the three main valuation methodologies used in banking.',
@@ -60,18 +71,22 @@ const FallbackContentModule = (() => {
       scenario: 'A client is deciding between an all-cash and an all-stock acquisition offer for a target company. Walk me through the tradeoffs you\'d lay out for them.',
     },
     {
-      id: 'credit-risk',
-      match: /credit risk|credit analy|lending|loan officer|underwriting.*loan/i,
+      id: 'risk',
+      label: 'Risk',
+      match: /credit risk|credit analy|lending|loan officer|underwriting.*loan|\brisk\b|market risk|operational risk|enterprise risk/i,
       foundational: [
         'What are the "5 Cs of credit," and how would you apply them to evaluate a borrower?',
         'What\'s the difference between probability of default and loss given default?',
         'How would you assess whether a company can service its debt obligations?',
         'What covenants might a lender put on a loan, and why?',
+        'How would you distinguish between market risk, credit risk, and operational risk?',
+        'What is Value at Risk, and what does it not tell you about a portfolio?',
       ],
       scenario: 'A long-standing borrower\'s revenue has declined for two consecutive quarters while their debt load has stayed flat. Walk me through your credit reassessment.',
     },
     {
       id: 'private-equity',
+      label: 'Private Equity',
       match: /private equity|venture capital|\bpe\b\W|\bvc\b\W|buyout|growth equity/i,
       foundational: [
         'Walk me through how a leveraged buyout creates equity returns.',
@@ -82,7 +97,32 @@ const FallbackContentModule = (() => {
       scenario: 'A portfolio company is underperforming its investment thesis 18 months into the hold period. Walk me through how you\'d approach it.',
     },
     {
+      id: 'markets-trading',
+      label: 'Markets & Trading',
+      match: /trading|trader|\bmarkets?\b|sales and trading|market making|broker|execution desk/i,
+      foundational: [
+        'What is the bid-ask spread, and what determines how wide or narrow it is?',
+        'How would you explain the difference between a market order and a limit order to a client?',
+        'What factors drive a market maker\'s willingness to take on inventory risk?',
+        'What\'s the difference between hedging a position and speculating on one?',
+      ],
+      scenario: 'A position you\'re holding moves sharply against you in the middle of the trading session, and liquidity is thinning out. Walk me through how you\'d react in real time.',
+    },
+    {
+      id: 'strategy-consulting',
+      label: 'Strategy & Consulting',
+      match: /strategy|consult|management consultant/i,
+      foundational: [
+        'Walk me through a framework you\'d use to structure an open-ended business problem.',
+        'How would you assess whether a company should enter a new market?',
+        'What\'s the difference between a company\'s cost structure and its revenue model, and why does that distinction matter for strategy?',
+        'How would you evaluate whether a proposed cost-cutting initiative is actually a good idea?',
+      ],
+      scenario: 'A client\'s profits have been declining for three straight quarters despite flat revenue. Walk me through how you\'d structure the problem to find out why.',
+    },
+    {
       id: 'fpna-corporate',
+      label: 'FP&A / Corporate Finance',
       match: /fp&a|financial planning|budget|corporate finance|treasury/i,
       foundational: [
         'Walk me through how you\'d build a rolling 12-month revenue forecast.',
@@ -96,6 +136,7 @@ const FallbackContentModule = (() => {
 
   const GENERAL_CATEGORY = {
     id: 'general-finance',
+    label: 'General Finance',
     foundational: [
       'Walk me through the three financial statements and how they connect.',
       'What\'s the difference between profit and cash flow, and why does the distinction matter?',
@@ -126,6 +167,29 @@ const FallbackContentModule = (() => {
     career_goals: (role) => `Where do you see your career heading over the next several years in ${role}?`,
   };
 
+  // Mode 2's follow-ups: simple, generic probes rather than AI-crafted
+  // ones tied to the specific content of an answer — that specificity is
+  // exactly what requires a live model, which this mode deliberately
+  // doesn't use. A little variety across a session beats repeating one.
+  const GENERIC_FOLLOWUPS = [
+    'Can you elaborate on that with a specific, concrete example?',
+    'What would you do differently if you had more time or more data?',
+    'Walk me through the reasoning behind that a little more — what\'s actually driving that conclusion?',
+    'If I pushed back and disagreed with that, how would you defend your answer?',
+    'What\'s the biggest risk or weakness in the approach you just described?',
+    'How would your answer change if the situation were twice as urgent?',
+  ];
+
+  // The self-assessment checklist Quick Practice shows instead of AI
+  // feedback — three fixed, honest questions for the candidate to grade
+  // themselves against, every time, so the checklist itself becomes a
+  // habit rather than one-off commentary.
+  const SELF_ASSESSMENT_ITEMS = [
+    { id: 'structure', label: 'Clear structure — a beginning, a middle, and a clear point, not a ramble' },
+    { id: 'specifics', label: 'Specific numbers, named examples, or concrete frameworks — not just generalities' },
+    { id: 'conclusion', label: 'A clear conclusion or recommendation, not just a description of the situation' },
+  ];
+
   function categoryFor(role) {
     const hit = CATEGORIES.find((c) => c.match.test(role || ''));
     return hit || GENERAL_CATEGORY;
@@ -153,6 +217,11 @@ const FallbackContentModule = (() => {
         return HR_QUESTIONS[subtype](role);
       default: return GENERAL_CATEGORY.foundational[0];
     }
+  }
+
+  /** A generic probing follow-up for Quick Practice, avoiding immediate repeats within the session. */
+  function getGenericFollowUp(alreadyUsed) {
+    return pick(GENERIC_FOLLOWUPS, new Set(alreadyUsed || []));
   }
 
   /** Honest degraded feedback — no attempt to fake a read on the specific
@@ -183,5 +252,45 @@ const FallbackContentModule = (() => {
     };
   }
 
-  return { getFallbackQuestion, getDegradedFeedback, buildLocalSummary };
+  /** Quick Practice's summary — purely arithmetic over the self-assessment
+   * checkboxes the candidate ticked themselves, same {overallSummary,
+   * topStrengths, topAreasToImprove} shape the AI summary uses, so the
+   * summary screen renders identically regardless of mode. */
+  function buildQuickPracticeSummary(role, transcript) {
+    const roundsSeen = [...new Set(transcript.map((t) => t.roundId))];
+    const totalItems = transcript.reduce((sum, t) => sum + (t.checklist ? t.checklist.length : 0), 0);
+    const checkedItems = transcript.reduce((sum, t) => sum + (t.checklist ? t.checklist.filter((c) => c.checked).length : 0), 0);
+    const pct = totalItems ? Math.round((checkedItems / totalItems) * 100) : 0;
+
+    const perItem = {};
+    SELF_ASSESSMENT_ITEMS.forEach((item) => { perItem[item.id] = { total: 0, checked: 0 }; });
+    transcript.forEach((t) => (t.checklist || []).forEach((c) => {
+      if (!perItem[c.id]) return;
+      perItem[c.id].total += 1;
+      if (c.checked) perItem[c.id].checked += 1;
+    }));
+
+    const overallSummary = `This was a self-assessed Quick Practice session for a "${role}" mock interview — no AI grading, just your own honest checklist. You answered ${transcript.length} questions across ${roundsSeen.length} round(s) and checked off ${checkedItems} of ${totalItems} self-assessment boxes overall (${pct}%). Use the per-item breakdown below to see which habit needs the most work, and consider running an Adaptive AI session next for a genuinely graded read.`;
+
+    const strengths = [];
+    const improve = [];
+    SELF_ASSESSMENT_ITEMS.forEach((item) => {
+      const stat = perItem[item.id];
+      if (!stat.total) return;
+      const itemPct = Math.round((stat.checked / stat.total) * 100);
+      const phrase = `${item.label.split(' — ')[0]}: checked in ${stat.checked}/${stat.total} answers (${itemPct}%)`;
+      if (itemPct >= 70) strengths.push(phrase);
+      else improve.push(phrase);
+    });
+    if (!strengths.length) strengths.push('(No checklist item was consistently checked this session — that\'s useful signal on its own.)');
+    if (!improve.length) improve.push('(Every checklist item was checked consistently — nice. Try Adaptive AI mode for a tougher, more specific read.)');
+
+    return { overallSummary, topStrengths: strengths, topAreasToImprove: improve };
+  }
+
+  return {
+    SELF_ASSESSMENT_ITEMS,
+    categoryFor, getFallbackQuestion, getGenericFollowUp, getDegradedFeedback,
+    buildLocalSummary, buildQuickPracticeSummary,
+  };
 })();

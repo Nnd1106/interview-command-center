@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Interview Command Center — Adaptive Mock Interview Simulator</title>
-<meta name="description" content="Type any finance-adjacent role and run a live, adaptive 3-round mock interview — technical, applied/case, and HR — with AI-generated follow-up questions and structured feedback. Nothing is ever saved." />
+<meta name="description" content="Type any finance-adjacent role and run a live 3-round mock interview — technical, applied/case, and HR. Choose Adaptive AI (Gemini-generated questions and feedback) or instant Quick Practice (no API key, self-graded). Nothing is ever saved." />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%2305070b'/%3E%3Cpath d='M20 70 L40 40 L55 55 L80 25' stroke='%2300f0ff' stroke-width='8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
 <link rel="stylesheet" href="assets/css/style.css" />
 </head>
@@ -28,8 +28,8 @@
 
 <main id="main-content" class="shell">
 
-  <!-- ===================== SCREEN 1: SETUP ===================== -->
-  <section class="screen active" id="screen-setup">
+  <!-- ===================== SCREEN 0: MODE SELECT ===================== -->
+  <section class="screen active" id="screen-mode-select">
 
     <div class="card privacy-panel">
       <h2>🔒 Privacy guarantee</h2>
@@ -37,12 +37,63 @@
         <li><strong>No resume upload.</strong> This tool doesn't offer one, specifically so nothing like that can ever be sent anywhere.</li>
         <li><strong>No server, no database.</strong> This is a static page — there is nothing on the other end to save your answers to, even if we wanted to.</li>
         <li><strong>In-memory only.</strong> Your role, answers, and feedback live in this browser tab's memory for this session and vanish the moment you close or reload the tab.</li>
-        <li><strong>Minimal API payload.</strong> Each answer you type is sent only to Google's Gemini API — along with the role you entered and the current question's text — to generate feedback and a follow-up. No name, no identifying info, nothing else is ever included.</li>
-        <li><strong>Your API key stays local.</strong> If you save a Gemini key below, it's stored only in this browser's <code>localStorage</code> and sent only to Google's API — never anywhere else.</li>
+        <li><strong>Minimal API payload (Adaptive AI mode only).</strong> Each answer you type is sent only to Google's Gemini API — along with the role you entered and the current question's text — to generate feedback and a follow-up. No name, no identifying info, nothing else is ever included.</li>
+        <li><strong>Quick Practice mode makes zero network calls.</strong> Everything — questions, follow-ups, and your self-assessment — happens entirely in this browser tab.</li>
       </ul>
     </div>
 
-    <div class="card">
+    <div class="mode-intro">
+      <p class="section-label">Choose how you want to practice</p>
+      <p class="mode-intro-sub">Both modes run the same structure — three rounds, a visible timer per question, the same round-by-round flow. The difference is where the questions and feedback come from, and what that costs you in time and personalization.</p>
+    </div>
+
+    <div class="mode-grid">
+      <div class="mode-card">
+        <div class="mode-kicker">Mode 1</div>
+        <h3>Adaptive AI Interview</h3>
+        <p class="mode-tagline">More realistic, more adaptive — and slower.</p>
+        <ul class="mode-list">
+          <li>Every question is generated live by <strong>Google's Gemini API</strong>, tailored to the exact role you type — not a fixed bank.</li>
+          <li>Follow-ups dig into something specific you actually said, the way a real interviewer probes a vague or weak point.</li>
+          <li>Feedback is AI-graded: what you covered well, what you missed, one specific way to improve.</li>
+          <li><strong>Each question or feedback step can take roughly 20–40 seconds</strong> to generate — longer if Gemini's free tier is rate-limited (it retries automatically with a visible countdown, then falls back to a backup question rather than getting stuck).</li>
+          <li>Requires a free Google AI Studio API key — no card, about 20 seconds to set up.</li>
+        </ul>
+        <div class="mode-meta-row">
+          <div class="mode-meta"><span class="meta-label">Speed</span><span class="meta-value slow">~20–40s per step</span></div>
+          <div class="mode-meta"><span class="meta-label">Personalization</span><span class="meta-value high">High — genuinely adaptive</span></div>
+        </div>
+        <button class="btn primary full" id="choose-ai-btn">Choose Adaptive AI →</button>
+      </div>
+
+      <div class="mode-card">
+        <div class="mode-kicker">Mode 2</div>
+        <h3>Quick Practice</h3>
+        <p class="mode-tagline">Faster, zero setup — and less personalized.</p>
+        <ul class="mode-list">
+          <li>Questions come from a <strong>pre-written bank</strong>, matched to the closest of several broad categories (Equity Research, Accounting &amp; Tax, Actuarial, Risk, Investment Banking, Private Equity, Markets &amp; Trading, Strategy &amp; Consulting, FP&amp;A, and more).</li>
+          <li>Every question appears <strong>instantly</strong> — no waiting, no API calls, ever.</li>
+          <li>Follow-ups are simple, generic probes (e.g. "can you elaborate with a specific example?").</li>
+          <li>Feedback is a <strong>self-assessment checklist</strong> you grade yourself against, not AI-graded.</li>
+          <li><strong>No API key needed at all.</strong></li>
+        </ul>
+        <div class="mode-meta-row">
+          <div class="mode-meta"><span class="meta-label">Speed</span><span class="meta-value fast">Instant</span></div>
+          <div class="mode-meta"><span class="meta-label">Personalization</span><span class="meta-value low">Lower — generic bank + self-grading</span></div>
+        </div>
+        <button class="btn primary full" id="choose-quick-btn">Choose Quick Practice →</button>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ===================== SCREEN 1: SETUP ===================== -->
+  <section class="screen" id="screen-setup">
+
+    <button class="btn small change-mode-link" id="change-mode-btn">← Change mode</button>
+    <div class="mode-banner" id="mode-banner"></div>
+
+    <div class="card" id="api-key-section">
       <p class="section-label">Free AI setup (one-time, ~20 seconds, no card)</p>
       <p style="font-size:12.5px;color:var(--text-secondary);line-height:1.6;margin:0 0 14px;">
         Questions and feedback are generated by <strong style="color:var(--text-primary)">Google's Gemini API</strong> —
@@ -70,9 +121,8 @@
         <button class="role-chip" data-role="FP&amp;A">FP&amp;A</button>
         <button class="role-chip" data-role="Insurance Underwriting">Insurance Underwriting</button>
       </div>
-      <p style="font-size:11px;color:var(--text-muted);margin-top:12px;">
+      <p style="font-size:11px;color:var(--text-muted);margin-top:12px;" id="role-card-hint">
         Three rounds: Technical foundations → Applied/case (scenario, guesstimate, logic) → HR/behavioral.
-        Every question is generated live for the exact role you type — nothing is a fixed question bank.
       </p>
       <button class="btn primary full" id="start-btn" style="margin-top:16px;" disabled>Enter a role above to begin</button>
       <div class="error-banner" id="setup-error" style="display:none;"></div>
@@ -85,7 +135,10 @@
 
     <div class="interview-topbar">
       <div class="round-rail" id="round-rail"></div>
-      <div class="timer-display" id="timer-display">02:30</div>
+      <div class="topbar-right">
+        <span class="mode-pill" id="mode-pill">—</span>
+        <div class="timer-display" id="timer-display">02:30</div>
+      </div>
     </div>
     <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
 
@@ -98,6 +151,7 @@
       <div class="question-meta">
         <span class="question-type-badge" id="question-type-badge">—</span>
         <span class="fallback-tag" id="fallback-tag" style="display:none;" title="Gemini was unavailable after two attempts, so this is a pre-written backup question, not a live AI one.">Offline backup</span>
+        <span class="category-tag" id="category-tag" style="display:none;" title="Your typed role was matched to the closest static-bank category."></span>
         <span id="question-progress-label">Question 1 of 3</span>
       </div>
       <p class="question-text" id="question-text">Loading your first question…</p>
@@ -117,19 +171,28 @@
     </div>
 
     <div class="card feedback-card" id="feedback-card" style="display:none;">
-      <p class="section-label">Interviewer feedback</p>
-      <div class="feedback-block covered">
-        <div class="fb-label">✓ Covered well</div>
-        <p id="fb-covered">—</p>
+      <p class="section-label" id="feedback-card-label">Interviewer feedback</p>
+
+      <div id="ai-feedback-block">
+        <div class="feedback-block covered">
+          <div class="fb-label">✓ Covered well</div>
+          <p id="fb-covered">—</p>
+        </div>
+        <div class="feedback-block missed">
+          <div class="fb-label">✗ Missed or off the mark</div>
+          <p id="fb-missed">—</p>
+        </div>
+        <div class="feedback-block improve">
+          <div class="fb-label">→ One way to improve</div>
+          <p id="fb-improve">—</p>
+        </div>
       </div>
-      <div class="feedback-block missed">
-        <div class="fb-label">✗ Missed or off the mark</div>
-        <p id="fb-missed">—</p>
+
+      <div id="quick-feedback-block" style="display:none;">
+        <p class="checklist-hint">No AI grading in Quick Practice — rate your own answer honestly. Nobody's checking but you.</p>
+        <div id="checklist-items"></div>
       </div>
-      <div class="feedback-block improve">
-        <div class="fb-label">→ One way to improve</div>
-        <p id="fb-improve">—</p>
-      </div>
+
       <button class="btn primary full" id="next-btn" style="margin-top:16px;">Continue</button>
     </div>
 
@@ -164,10 +227,9 @@
       <div id="transcript-list"></div>
     </div>
 
-    <div class="privacy-reminder">
-      🔒 This transcript exists only on this page, right now. Nothing was ever sent anywhere except Gemini's API for
-      generating questions and feedback, and nothing was ever saved server-side — there is no server. Close or
-      reload this tab and every trace of this session is gone for good.
+    <div class="privacy-reminder" id="privacy-reminder">
+      🔒 This transcript exists only on this page, right now. Nothing was ever saved server-side — there is no
+      server. Close or reload this tab and every trace of this session is gone for good.
     </div>
 
     <button class="btn primary full" id="restart-btn" style="margin-top:20px;">Start a new mock interview</button>
@@ -177,7 +239,7 @@
 </main>
 
 <footer class="footer-note">
-  <span>&copy; 2026 Niranjan Desai. Built with vanilla HTML/CSS/JS — no frameworks, no backend, no data storage anywhere. Questions and feedback via Google's Gemini API (free tier).</span>
+  <span>&copy; 2026 Niranjan Desai. Built with vanilla HTML/CSS/JS — no frameworks, no backend, no data storage anywhere. Adaptive AI mode uses Google's Gemini API (free tier); Quick Practice mode makes no network calls at all.</span>
   <span class="footer-links">
     <a href="https://github.com/Nnd1106" target="_blank" rel="noopener">GitHub</a>
     <a href="mailto:mr.niranjandesai@gmail.com">Email</a>
